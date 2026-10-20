@@ -8,7 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 const MR = 12;
 const BAND = 60;
 
@@ -163,8 +163,6 @@ export default function App() {
   const dragSlot  = useRef(null);
   const dragIdx   = useRef(0);
   const zoomRef   = useRef(null);
-  const lastPtr   = useRef(null);
-  const autoRaf   = useRef(null);
 
   function handleFile(file) {
     const reader = new FileReader();
@@ -243,6 +241,19 @@ export default function App() {
     if (tailPt) drawMarker(ctx,b(tailPt),C.tail,'T');
 
   }, [step,nosePt,tailPt,maxPts,w05Pts,w13Pts,w23Pts,w45Pts,tailWPts,imgSrc,imgW,imgH]);
+
+  // ステップ1/8に入った時、キャンバス上端が画面の外にあれば1回だけスクロールして画面内に入れる
+  // （ドラッグ中はスクロールしないので、指とプロットポイントの動きは1:1のまま）
+  useEffect(() => {
+    if (step !== 1 && step !== 8) return;
+    const t = setTimeout(() => {
+      const c = canvasRef.current;
+      if (!c) return;
+      const top = c.getBoundingClientRect().top;
+      if (top < 8) window.scrollBy(0, top - 8);
+    }, 60);
+    return () => clearTimeout(t);
+  }, [step]);
 
   function getpt(e) {
     const canvas=canvasRef.current;
@@ -348,52 +359,20 @@ export default function App() {
       dragIdx.current=tailWPts.length<2?tailWPts.length:1;
     } else return;
     applyPt(pt);
-    if (step===1||step===8) { lastPtr.current={clientX:e.clientX,clientY:e.clientY}; applyZoom(e); startAutoScroll(); }
+    if (step===1||step===8) applyZoom(e);
   }
 
   function onPointerMove(e) {
     if (!dragging.current) return;
     e.preventDefault();
     applyPt(getpt(e));
-    if (step===1||step===8) { lastPtr.current={clientX:e.clientX,clientY:e.clientY}; applyZoom(e); }
+    if (step===1||step===8) applyZoom(e);
   }
 
   function onPointerUp(e) {
     dragging.current=false;
     dragSlot.current=null;
-    stopAutoScroll();
     removeZoom();
-  }
-
-  // ドラッグ中に指が画面の上下端に近づいたらページを自動スクロールし、
-  // キャンバス上端/下端（画像端）まで拡大表示が届くようにする
-  const AUTO_EDGE = 90;
-  function startAutoScroll() {
-    stopAutoScroll();
-    const tick = () => {
-      if (!dragging.current) { autoRaf.current=null; return; }
-      const p = lastPtr.current;
-      if (p) {
-        const vh = window.innerHeight;
-        let dy = 0;
-        if (p.clientY < AUTO_EDGE) dy = -Math.ceil((AUTO_EDGE - Math.max(p.clientY,0)) / 15);
-        else if (p.clientY > vh - AUTO_EDGE) dy = Math.ceil((p.clientY - (vh - AUTO_EDGE)) / 15);
-        if (dy !== 0) {
-          const before = window.scrollY;
-          window.scrollBy(0, dy);
-          if (window.scrollY !== before) {
-            applyPt(getpt(p));
-            applyZoom(p);
-          }
-        }
-      }
-      autoRaf.current = requestAnimationFrame(tick);
-    };
-    autoRaf.current = requestAnimationFrame(tick);
-  }
-  function stopAutoScroll() {
-    if (autoRaf.current) cancelAnimationFrame(autoRaf.current);
-    autoRaf.current = null;
   }
 
   function applyPt(pt) {
