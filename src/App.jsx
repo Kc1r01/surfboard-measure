@@ -8,7 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 // ===== 画面上の見た目(CSSピクセル)基準のサイズ設定 =====
 // 画像のピクセル数ではなく、画面上の大きさで決める。PXU＝キャンバス1CSSピクセルあたりの画像ピクセル数。
 // 基準はiPhone SE3（CSS幅375px）での見た目。
@@ -323,6 +323,9 @@ export default function App() {
       zCanvas.width = VW;
       zCanvas.height = VH;
     }
+    // 表示サイズも描画と同じpxで固定する（100vhだとURLバー表示中に縦に引き伸ばされ、下ほど位置がずれる）
+    zCanvas.style.width = VW + 'px';
+    zCanvas.style.height = VH + 'px';
     zCanvas.style.display = 'block';
     zCanvas.style.background = 'transparent';
     const zCtx = zCanvas.getContext('2d');
