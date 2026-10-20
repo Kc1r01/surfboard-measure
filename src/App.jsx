@@ -8,7 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v23';
 const MR = 12;
 const BAND = 60;
 
@@ -16,22 +16,22 @@ function mdp(pt) { return { x: pt.x, y: pt.y - MR*4 }; }
 
 function drawMarker(ctx, pt, color, label) {
   const d = mdp(pt);
-  ctx.beginPath(); ctx.arc(d.x, d.y, MR+4, 0, Math.PI*2);
-  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.globalAlpha=.35; ctx.stroke(); ctx.globalAlpha=1;
-  ctx.beginPath(); ctx.arc(d.x, d.y, MR, 0, Math.PI*2);
-  ctx.fillStyle=color+'b3'; ctx.fill();
-  ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(d.x-MR,d.y); ctx.lineTo(d.x+MR,d.y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(d.x,d.y-MR); ctx.lineTo(d.x,d.y+MR); ctx.stroke();
+  const R = MR*2/3; // マーカーの大きさ（縦横とも従来の2/3）。位置のオフセット(MR*4)は変えない
+  ctx.beginPath(); ctx.arc(d.x, d.y, (MR+4)*2/3, 0, Math.PI*2);
+  ctx.strokeStyle=color; ctx.lineWidth=1; ctx.globalAlpha=.35; ctx.stroke(); ctx.globalAlpha=1;
+  ctx.beginPath(); ctx.arc(d.x, d.y, R, 0, Math.PI*2);
+  ctx.fillStyle=color+'80'; ctx.fill(); // 不透明度 70% → 50%（透明度+20%）。白い輪郭は無し
+  ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(d.x-R,d.y); ctx.lineTo(d.x+R,d.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(d.x,d.y-R); ctx.lineTo(d.x,d.y+R); ctx.stroke();
   if (label) {
     const fs=16;
     ctx.font=`bold ${fs}px sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='bottom';
     const tw=ctx.measureText(label).width;
     ctx.fillStyle='rgba(0,0,0,.8)';
-    ctx.beginPath(); ctx.roundRect(d.x-tw/2-5,d.y-MR-fs-2,tw+10,fs+4,3); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.fillText(label,d.x,d.y-MR);
+    ctx.beginPath(); ctx.roundRect(d.x-tw/2-5,d.y-R-fs-2,tw+10,fs+4,3); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.fillText(label,d.x,d.y-R);
   }
 }
 
@@ -269,49 +269,72 @@ export default function App() {
     };
   }
 
-  const ZOOM_SCALE = 3;
+  const ZOOM_SCALE = 2.7;
+  const ZOOM_OFFSET = 64; // 拡大画面内で、指よりこのpx分だけ上にプロットポイントを置く
+  const zoomState = useRef(null);
+
+  // タッチ開始時に拡大枠を決める（以降ドラッグ中は枠も拡大画像も固定。動くのはポイントだけ）
+  function initZoom(e) {
+    const mainCanvas = canvasRef.current;
+    if (!mainCanvas) return;
+    const rect = mainCanvas.getBoundingClientRect();
+    const VW = window.innerWidth, VH = window.innerHeight;
+    const SRC = VW / ZOOM_SCALE, k = ZOOM_SCALE;
+    const isTail = step === 8 || (step === 1 && !!nosePt);
+    let boxTop = isTail ? rect.bottom - VW : rect.top;
+    boxTop = Math.max(0, Math.min(VH - VW, boxTop));
+    // 横方向：タップした位置の元画像のx座標が、拡大画面でも指と同じx位置に来るように合わせる
+    const ptX0 = getpt(e).x;
+    const srcX = ptX0 - e.clientX / k;
+    const srcY = isTail ? mainCanvas.height - SRC : 0;
+    zoomState.current = { boxTop, srcX, srcY, SRC, k, VW, VH };
+  }
+
+  // 拡大画面内の指の位置 → プロットポイント（指から上へオフセット）
+  function zoomPt(e) {
+    const z = zoomState.current;
+    if (!z) return getpt(e);
+    const zx = Math.max(0, Math.min(z.VW, e.clientX));
+    const zy = Math.max(0, Math.min(z.VW, e.clientY - ZOOM_OFFSET - z.boxTop));
+    const px = z.srcX + zx / z.k;            // 元画像(キャンバス)座標のマーカー位置
+    const py = z.srcY + zy / z.k;
+    return {
+      x: Math.max(-imgW*0.1, Math.min(imgW*1.1, px)),
+      y: Math.max(-BAND, Math.min(imgH+BAND, py + MR*4 - BAND)),
+    };
+  }
+
   function applyZoom(e) {
     const mainCanvas = canvasRef.current;
     const zCanvas = zoomRef.current;
-    if (!mainCanvas || !zCanvas) return;
-    const rect = mainCanvas.getBoundingClientRect();
-    const sc = mainCanvas.width / rect.width;
-    // マーカーと同じ（端でクランプ済みの）位置を使う
-    const gp = getpt(e);
-    const ptX = gp.x;
-    const ptY = gp.y + BAND - MR * 4;
-    const VW = window.innerWidth;
-    const VH = window.innerHeight;
+    const z = zoomState.current;
+    if (!mainCanvas || !zCanvas || !z) return;
+    const { VW, VH, boxTop, srcX, srcY, SRC, k } = z;
     if (zCanvas.width !== VW || zCanvas.height !== VH) {
       zCanvas.width = VW;
       zCanvas.height = VH;
     }
     zCanvas.style.display = 'block';
+    zCanvas.style.background = 'transparent';
     const zCtx = zCanvas.getContext('2d');
+    zCtx.clearRect(0, 0, VW, VH);
     zCtx.fillStyle = '#0d1b2a';
-    zCtx.fillRect(0, 0, VW, VH);
-    const destCX = VW / 2;
-    const destCY = VH / 3;
-    const SRC = VW / ZOOM_SCALE;
-    // 画像端でクランプしない：十字線の位置＝実際のプロット位置を常に一致させ、
-    // 画像の外側（端）まで拡大表示が動くようにする。範囲外は背景色のまま。
-    const srcX = ptX - SRC / 2;
-    const srcY = ptY - SRC / 2;
-    const dstX = destCX - VW / 2;
-    const dstY = destCY - VW / 2;
-    const k = VW / SRC;
+    zCtx.fillRect(0, boxTop, VW, VW);
     const cx0 = Math.max(0, srcX), cy0 = Math.max(0, srcY);
     const cx1 = Math.min(mainCanvas.width,  srcX + SRC);
     const cy1 = Math.min(mainCanvas.height, srcY + SRC);
     if (cx1 > cx0 && cy1 > cy0) {
       zCtx.drawImage(mainCanvas, cx0, cy0, cx1 - cx0, cy1 - cy0,
-        dstX + (cx0 - srcX) * k, dstY + (cy0 - srcY) * k, (cx1 - cx0) * k, (cy1 - cy0) * k);
+        (cx0 - srcX) * k, boxTop + (cy0 - srcY) * k, (cx1 - cx0) * k, (cy1 - cy0) * k);
     }
+    // 十字線＝プロットポイントの位置（指から上へオフセット）
+    const chX = Math.max(0, Math.min(VW, e.clientX));
+    const chY = boxTop + Math.max(0, Math.min(VW, e.clientY - ZOOM_OFFSET - boxTop));
     zCtx.strokeStyle = 'rgba(255,255,255,0.9)';
     zCtx.lineWidth = 2;
     zCtx.setLineDash([6, 4]);
-    zCtx.beginPath(); zCtx.moveTo(destCX - 20, destCY); zCtx.lineTo(destCX + 20, destCY); zCtx.stroke();
-    zCtx.beginPath(); zCtx.moveTo(destCX, destCY - 20); zCtx.lineTo(destCX, destCY + 20); zCtx.stroke();
+    zCtx.beginPath(); zCtx.moveTo(chX - 20, chY); zCtx.lineTo(chX + 20, chY); zCtx.stroke();
+    zCtx.beginPath(); zCtx.moveTo(chX, chY - 20); zCtx.lineTo(chX, chY + 20); zCtx.stroke();
     zCtx.setLineDash([]);
   }
 
@@ -358,15 +381,15 @@ export default function App() {
       dragSlot.current='tailW';
       dragIdx.current=tailWPts.length<2?tailWPts.length:1;
     } else return;
-    applyPt(pt);
-    if (step===1||step===8) applyZoom(e);
+    if (step===1||step===8) { initZoom(e); applyPt(zoomPt(e)); applyZoom(e); }
+    else applyPt(pt);
   }
 
   function onPointerMove(e) {
     if (!dragging.current) return;
     e.preventDefault();
-    applyPt(getpt(e));
-    if (step===1||step===8) applyZoom(e);
+    if (step===1||step===8) { applyPt(zoomPt(e)); applyZoom(e); }
+    else applyPt(getpt(e));
   }
 
   function onPointerUp(e) {
