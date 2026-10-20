@@ -162,6 +162,8 @@ export default function App() {
   const dragSlot  = useRef(null);
   const dragIdx   = useRef(0);
   const zoomRef   = useRef(null);
+  const lastPtr   = useRef(null);
+  const autoRaf   = useRef(null);
 
   function handleFile(file) {
     const reader = new FileReader();
@@ -336,20 +338,52 @@ export default function App() {
       dragIdx.current=tailWPts.length<2?tailWPts.length:1;
     } else return;
     applyPt(pt);
-    if (step===1||step===8) applyZoom(e);
+    if (step===1||step===8) { lastPtr.current={clientX:e.clientX,clientY:e.clientY}; applyZoom(e); startAutoScroll(); }
   }
 
   function onPointerMove(e) {
     if (!dragging.current) return;
     e.preventDefault();
     applyPt(getpt(e));
-    if (step===1||step===8) applyZoom(e);
+    if (step===1||step===8) { lastPtr.current={clientX:e.clientX,clientY:e.clientY}; applyZoom(e); }
   }
 
   function onPointerUp(e) {
     dragging.current=false;
     dragSlot.current=null;
+    stopAutoScroll();
     removeZoom();
+  }
+
+  // ドラッグ中に指が画面の上下端に近づいたらページを自動スクロールし、
+  // キャンバス上端/下端（画像端）まで拡大表示が届くようにする
+  const AUTO_EDGE = 90;
+  function startAutoScroll() {
+    stopAutoScroll();
+    const tick = () => {
+      if (!dragging.current) { autoRaf.current=null; return; }
+      const p = lastPtr.current;
+      if (p) {
+        const vh = window.innerHeight;
+        let dy = 0;
+        if (p.clientY < AUTO_EDGE) dy = -Math.ceil((AUTO_EDGE - Math.max(p.clientY,0)) / 6);
+        else if (p.clientY > vh - AUTO_EDGE) dy = Math.ceil((p.clientY - (vh - AUTO_EDGE)) / 6);
+        if (dy !== 0) {
+          const before = window.scrollY;
+          window.scrollBy(0, dy);
+          if (window.scrollY !== before) {
+            applyPt(getpt(p));
+            applyZoom(p);
+          }
+        }
+      }
+      autoRaf.current = requestAnimationFrame(tick);
+    };
+    autoRaf.current = requestAnimationFrame(tick);
+  }
+  function stopAutoScroll() {
+    if (autoRaf.current) cancelAnimationFrame(autoRaf.current);
+    autoRaf.current = null;
   }
 
   function applyPt(pt) {
@@ -554,7 +588,7 @@ export default function App() {
       {step>=1&&step<=6 && (
         <div>
           <div style={{margin:'14px 32px 0',borderRadius:12,overflow:'hidden',background:'#000',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none',position:'relative'}}>
-            <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
+            <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
           </div>
           <canvas ref={zoomRef} style={{display:'none',position:'fixed',top:0,left:0,width:'100vw',height:'100vh',zIndex:999,pointerEvents:'none',background:'#000'}} />
           <div style={{margin:'8px 16px 0',display:'flex',flexWrap:'wrap',gap:8}}>
@@ -599,7 +633,7 @@ export default function App() {
       {step===8 && (
         <div>
           <div style={{margin:'14px 32px 0',borderRadius:12,overflow:'hidden',background:'#000',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none',position:'relative'}}>
-            <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
+            <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
           </div>
           <canvas ref={zoomRef} style={{display:'none',position:'fixed',top:0,left:0,width:'100vw',height:'100vh',zIndex:999,pointerEvents:'none',background:'#000'}} />
           <div style={{margin:'8px 16px 0',display:'flex',flexWrap:'wrap',gap:8}}>
