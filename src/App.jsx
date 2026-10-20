@@ -8,9 +8,16 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v23';
-const MR = 12;
-const BAND = 60;
+const APP_VERSION = 'v24';
+// ===== 画面上の見た目(CSSピクセル)基準のサイズ設定 =====
+// 画像のピクセル数ではなく、画面上の大きさで決める。PXU＝キャンバス1CSSピクセルあたりの画像ピクセル数。
+// 基準はiPhone SE3（CSS幅375px）での見た目。
+const MR_CSS = 12;    // マーカー基準サイズ（ここから半径などを決める）／オフセット=MR_CSS*4
+const BAND_CSS = 60;  // 画像の上下に確保する仮想の余白
+let PXU = 1;
+let MR = MR_CSS;
+let BAND = BAND_CSS;
+function setPxu(v) { PXU = v; MR = MR_CSS * v; BAND = BAND_CSS * v; }
 
 function mdp(pt) { return { x: pt.x, y: pt.y - MR*4 }; }
 
@@ -18,14 +25,14 @@ function drawMarker(ctx, pt, color, label) {
   const d = mdp(pt);
   const R = MR*2/3; // マーカーの大きさ（縦横とも従来の2/3）。位置のオフセット(MR*4)は変えない
   ctx.beginPath(); ctx.arc(d.x, d.y, (MR+4)*2/3, 0, Math.PI*2);
-  ctx.strokeStyle=color; ctx.lineWidth=1; ctx.globalAlpha=.35; ctx.stroke(); ctx.globalAlpha=1;
+  ctx.strokeStyle=color; ctx.lineWidth=PXU; ctx.globalAlpha=.35; ctx.stroke(); ctx.globalAlpha=1;
   ctx.beginPath(); ctx.arc(d.x, d.y, R, 0, Math.PI*2);
   ctx.fillStyle=color+'80'; ctx.fill(); // 不透明度 70% → 50%（透明度+20%）。白い輪郭は無し
-  ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=PXU;
   ctx.beginPath(); ctx.moveTo(d.x-R,d.y); ctx.lineTo(d.x+R,d.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(d.x,d.y-R); ctx.lineTo(d.x,d.y+R); ctx.stroke();
   if (label) {
-    const fs=16;
+    const fs=16*PXU;
     ctx.font=`bold ${fs}px sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='bottom';
     const tw=ctx.measureText(label).width;
@@ -37,8 +44,8 @@ function drawMarker(ctx, pt, color, label) {
 
 function drawLine(ctx, a, b, color, lw, dashed) {
   ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-  ctx.strokeStyle=color; ctx.lineWidth=lw||3;
-  ctx.setLineDash(dashed?[10,6]:[]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle=color; ctx.lineWidth=(lw||3)*PXU;
+  ctx.setLineDash(dashed?[10*PXU,6*PXU]:[]); ctx.stroke(); ctx.setLineDash([]);
 }
 
 function drawGuideLine(ctx, nose, tail, t, color, label, cW, cH) {
@@ -51,14 +58,14 @@ function drawGuideLine(ctx, nose, tail, t, color, label, cW, cH) {
   ctx.save();
   ctx.beginPath(); ctx.rect(0, 0, cW, cH); ctx.clip();
   ctx.beginPath(); ctx.moveTo(cx-px*far,cy-py*far); ctx.lineTo(cx+px*far,cy+py*far);
-  ctx.strokeStyle=color; ctx.lineWidth=3; ctx.setLineDash([14,8]); ctx.stroke();
+  ctx.strokeStyle=color; ctx.lineWidth=3*PXU; ctx.setLineDash([14*PXU,8*PXU]); ctx.stroke();
   ctx.restore();
-  const fs=15;
+  const fs=15*PXU;
   ctx.save();
   ctx.font=`bold ${fs}px sans-serif`;
   ctx.textAlign='left'; ctx.textBaseline='middle';
   const tw=ctx.measureText(label).width;
-  const lx=cW-tw-20, ly=Math.max(fs+6,Math.min(cH-fs-6, cy+py*far*0.5));
+  const lx=cW-tw-20*PXU, ly=Math.max(fs+6,Math.min(cH-fs-6, cy+py*far*0.5));
   ctx.fillStyle='rgba(0,0,0,.75)';
   ctx.beginPath(); ctx.roundRect(lx-6,ly-fs/2-3,tw+12,fs+6,3); ctx.fill();
   ctx.fillStyle=color; ctx.fillText(label,lx,ly);
@@ -171,6 +178,8 @@ export default function App() {
       tmp.onload = () => {
         const MAX=1600; let w=tmp.width, h=tmp.height;
         if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} }
+        // 画像の解像度に関わらず見た目の大きさを揃える：キャンバス表示幅(CSS px)に対する画像ピクセル数の比
+        setPxu(Math.max(0.3, w / Math.max(100, Math.min(480, window.innerWidth) - 64)));
         const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
         cv.getContext('2d').drawImage(tmp,0,0,w,h);
         const url=cv.toDataURL('image/jpeg',0.88);
@@ -279,7 +288,7 @@ export default function App() {
     if (!mainCanvas) return;
     const rect = mainCanvas.getBoundingClientRect();
     const VW = window.innerWidth, VH = window.innerHeight;
-    const SRC = VW / ZOOM_SCALE, k = ZOOM_SCALE;
+    const SRC = VW / ZOOM_SCALE * PXU, k = ZOOM_SCALE / PXU; // 拡大率は画面上の大きさ基準
     const isTail = step === 8 || (step === 1 && !!nosePt);
     let boxTop = isTail ? rect.bottom - VW : rect.top;
     boxTop = Math.max(0, Math.min(VH - VW, boxTop));
@@ -461,8 +470,8 @@ export default function App() {
       function emphLine(a,b,color){
         const ax=a.x, ay=a.y+BAND, bx=b.x, by=b.y+BAND;
         sctx.beginPath(); sctx.moveTo(ax,ay); sctx.lineTo(bx,by);
-        sctx.strokeStyle=color; sctx.lineWidth=5; sctx.setLineDash([]); sctx.stroke();
-        [[ax,ay],[bx,by]].forEach(([px,py])=>{ sctx.beginPath(); sctx.arc(px,py,8,0,Math.PI*2); sctx.fillStyle=color; sctx.fill(); });
+        sctx.strokeStyle=color; sctx.lineWidth=5*PXU; sctx.setLineDash([]); sctx.stroke();
+        [[ax,ay],[bx,by]].forEach(([px,py])=>{ sctx.beginPath(); sctx.arc(px,py,8*PXU,0,Math.PI*2); sctx.fillStyle=color; sctx.fill(); });
       }
       emphLine(res.mMax0,res.mMax1,C.max);
       emphLine(res.mW050,res.mW051,C.w05);
