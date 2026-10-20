@@ -8,13 +8,10 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const MR = 12;   // マーカー半径
-const BAND = 60; // 上下黒帯の高さ（画像座標系px）
+const MR = 12;
+const BAND = 60;
 
-// マーカーの表示位置（タップ座標から左上にオフセット）
-function mdp(pt) {
-  return { x: pt.x, y: pt.y - MR*4 };
-}
+function mdp(pt) { return { x: pt.x, y: pt.y - MR*4 }; }
 
 function drawMarker(ctx, pt, color, label) {
   const d = mdp(pt);
@@ -49,15 +46,12 @@ function drawGuideLine(ctx, nose, tail, t, color, label, cW, cH) {
   const ux=(tail.x-nose.x)/totalPx, uy=(tail.y-nose.y)/totalPx;
   const px=-uy, py=ux;
   const cx=nose.x+(tail.x-nose.x)*t, cy=nose.y+(tail.y-nose.y)*t;
-  // canvas対角線長さでクリップされる線を引く（setLineDashは必ずリセット）
   const far=Math.max(cW,cH)*2;
   ctx.save();
-  // 画像範囲内だけにクリップ
   ctx.beginPath(); ctx.rect(0, 0, cW, cH); ctx.clip();
   ctx.beginPath(); ctx.moveTo(cx-px*far,cy-py*far); ctx.lineTo(cx+px*far,cy+py*far);
   ctx.strokeStyle=color; ctx.lineWidth=3; ctx.setLineDash([14,8]); ctx.stroke();
   ctx.restore();
-  // ラベル（右端付近に固定）
   const fs=15;
   ctx.save();
   ctx.font=`bold ${fs}px sans-serif`;
@@ -71,23 +65,20 @@ function drawGuideLine(ctx, nose, tail, t, color, label, cW, cH) {
 }
 
 function dist(a,b) { return a&&b ? Math.hypot(a.x-b.x,a.y-b.y) : 0; }
-function lerp(a,b,t) { return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t}; }
 
-// タップ点を補助線の垂直方向に拘束
-// 戻り値はタップ座標系（mdpの逆補正済み）
 function constrain(pt, nose, tail, t) {
   if (!nose||!tail) return pt;
-  const totalPx = Math.hypot(tail.x-nose.x,tail.y-nose.y);
+  const mn=mdp(nose), mt=mdp(tail);
+  const totalPx = Math.hypot(mt.x-mn.x, mt.y-mn.y);
   if (!totalPx) return pt;
-  const ux=(tail.x-nose.x)/totalPx, uy=(tail.y-nose.y)/totalPx;
+  const ux=(mt.x-mn.x)/totalPx, uy=(mt.y-mn.y)/totalPx;
   const px=-uy, py=ux;
-  const cx=nose.x+(tail.x-nose.x)*t, cy=nose.y+(tail.y-nose.y)*t;
-  // タップ点のマーカー表示位置を求める
-  const dx=mdp(pt).x-cx, dy=mdp(pt).y-cy;
+  const cx=mn.x+(mt.x-mn.x)*t, cy=mn.y+(mt.y-mn.y)*t;
+  const mp=mdp(pt);
+  const dx=mp.x-cx, dy=mp.y-cy;
   const proj=dx*px+dy*py;
-  // マーカー表示位置が補助線上になるタップ座標を逆算
   const mx=cx+px*proj, my=cy+py*proj;
-  return { x: mx,      y: my+MR*4 };
+  return { x: mx, y: my+MR*4 };
 }
 
 export default function App() {
@@ -107,13 +98,13 @@ export default function App() {
   const [w13Pts, setW13Pts] = useState([]);
   const [w23Pts, setW23Pts] = useState([]);
   const [w45Pts, setW45Pts] = useState([]);
+  const [isPinTail, setIsPinTail] = useState(null);
+  const [tailWPts, setTailWPts] = useState([]);
   const [resultImg, setResultImg] = useState(null);
   const [resultData, setResultData] = useState(null);
-
   const [lenFt, setLenFt] = useState('');
   const [lenIn, setLenIn] = useState('');
 
-  // 単位変換
   function cmToFtIn(cm) {
     const totalIn = parseFloat(cm)/2.54;
     const ft = Math.floor(totalIn/12);
@@ -125,8 +116,10 @@ export default function App() {
   }
   function onLenCmChange(val) {
     setBoardLen(val);
-    if (parseFloat(val)>0) { const r=cmToFtIn(val); setLenFt(r.ft); setLenIn(r.inch); }
-    else { setLenFt(''); setLenIn(''); }
+    if (val && !isNaN(parseFloat(val))) {
+      const { ft, inch } = cmToFtIn(parseFloat(val));
+      setLenFt(ft); setLenIn(inch);
+    } else { setLenFt(''); setLenIn(''); }
   }
   function onLenFtChange(val) {
     setLenFt(val);
@@ -140,55 +133,9 @@ export default function App() {
   }
   function onMaxWCmChange(val) {
     setMaxWInput(val);
-    if(parseFloat(val)>0){
-      const totalIn=parseFloat(val)/2.54;
-      const intPart=Math.floor(totalIn);
-      const eighths=Math.round((totalIn-intPart)*8);
-      setMaxWInt(String(intPart)); setMaxWNum(String(eighths)); setMaxWDen('8');
-    } else { setMaxWInt(''); setMaxWNum(''); setMaxWDen(''); }
-  }
-  function onMaxWInchChange(iv,nv,dv) {
-    if(iv!==undefined) setMaxWInt(iv);
-    if(nv!==undefined) setMaxWNum(nv);
-    if(dv!==undefined) setMaxWDen(dv);
-    const i=parseFloat(iv??maxWInt)||0;
-    const n=parseFloat(nv??maxWNum)||0;
-    const d=parseFloat(dv??maxWDen)||1;
-    const cm=((i+n/d)*2.54).toFixed(1);
-    if(i+n>0) setMaxWInput(cm);
-  }
-
-  const canvasRef = useRef(null);
-  const imgRef    = useRef(null);
-  const fileRef   = useRef(null);
-  const dragging  = useRef(false);
-  const dragSlot  = useRef(null);
-  const dragIdx   = useRef(0);
-  // 全体の高さ（画像 + 上下BAND）
-  const totalH = imgH + BAND*2;
-
-  // 全長cm変更時→ft/inch自動計算
-  function onLenCmChange(val) {
-    setBoardLen(val);
-    if (val && !isNaN(parseFloat(val))) {
-      const { ft, inch } = cmToFtIn(parseFloat(val));
-      setLenFt(ft); setLenIn(inch);
-    } else { setLenFt(''); setLenIn(''); }
-  }
-  // 全長ft/inch変更時→cm自動計算
-  function onLenFtInChange(ft, inch) {
-    setLenFt(ft); setLenIn(inch);
-    const cm = ftInToCm(ft, inch);
-    if (parseFloat(cm) > 0) setBoardLen(cm);
-    else setBoardLen('');
-  }
-  // 最大幅cm変更時→inch自動計算
-  function onMaxWCmChange(val) {
-    setMaxWInput(val);
     if (val && !isNaN(parseFloat(val))) {
       const totalIn = parseFloat(val)/2.54;
       const intPart = Math.floor(totalIn);
-      // 分数に変換（最も近い1/8単位）
       const fracPart = totalIn - intPart;
       const eighths = Math.round(fracPart*8);
       setMaxWInt(String(intPart));
@@ -196,7 +143,6 @@ export default function App() {
       setMaxWDen('8');
     } else { setMaxWInt(''); setMaxWNum(''); setMaxWDen(''); }
   }
-  // 最大幅inch（分数）変更時→cm自動計算
   function onMaxWInchChange(intV, numV, denV) {
     if (intV !== undefined) setMaxWInt(intV);
     if (numV !== undefined) setMaxWNum(numV);
@@ -208,6 +154,14 @@ export default function App() {
     if (totalIn > 0) setMaxWInput((totalIn*2.54).toFixed(1));
     else setMaxWInput('');
   }
+
+  const canvasRef = useRef(null);
+  const imgRef    = useRef(null);
+  const fileRef   = useRef(null);
+  const dragging  = useRef(false);
+  const dragSlot  = useRef(null);
+  const dragIdx   = useRef(0);
+  const zoomRef   = useRef(null);
 
   function handleFile(file) {
     const reader = new FileReader();
@@ -227,17 +181,6 @@ export default function App() {
     reader.readAsDataURL(file);
   }
 
-  // ドラッグ中スクロール禁止（passive:falseでtouchイベント直接登録）
-  // placeholderスタイルをグローバルに注入
-  useEffect(()=>{
-    const el = document.createElement('style');
-    el.id = 'bm-ph-style';
-    el.textContent = `input::placeholder { color: rgba(200,184,154,0.45) !important; font-size: 18px !important; }`;
-    document.head.appendChild(el);
-    return ()=>{ const s=document.getElementById('bm-ph-style'); if(s) s.remove(); };
-  },[]);
-
-  // iOSズーム防止：maximum-scale=1をviewportに設定
   useEffect(()=>{
     const meta = document.querySelector('meta[name="viewport"]');
     if (meta) meta.setAttribute('content','width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
@@ -245,7 +188,7 @@ export default function App() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || step < 1 || step > 6) return;
+    if (!canvas || (step < 1 || step > 6) && step !== 8) return;
     function blockScroll(e) {
       if (dragging.current) e.preventDefault();
     }
@@ -255,7 +198,6 @@ export default function App() {
     };
   }, [step]);
 
-  // Canvas描画
   useEffect(() => {
     if (!imgRef.current||step===0) return;
     const canvas=canvasRef.current;
@@ -263,7 +205,6 @@ export default function App() {
     const img=imgRef.current;
     const cw=canvas.parentElement.clientWidth;
     const sc=img.width/cw;
-    // imgは既にBAND込みの合成画像なのでimg.heightをそのまま使う
     canvas.width=img.width; canvas.height=img.height;
     canvas.style.width=cw+'px';
     canvas.style.height=Math.round(img.height/sc)+'px';
@@ -271,16 +212,16 @@ export default function App() {
     ctx.drawImage(img,0,0);
 
     const cW=canvas.width, cH=canvas.height;
-    // 元画像座標→canvas座標（BAND加算）
     const b = pt => ({x:pt.x, y:pt.y+BAND});
 
     const bL=parseFloat(boardLen)||200;
-    if (nosePt&&tailPt&&step>=3) drawGuideLine(ctx,b(nosePt),b(tailPt),50/bL,C.w05,'Nから0.5m',cW,cH);
-    if (nosePt&&tailPt&&step>=4) drawGuideLine(ctx,b(nosePt),b(tailPt),100/bL,C.w13,'Nから1m',cW,cH);
-    if (nosePt&&tailPt&&step>=5) drawGuideLine(ctx,b(nosePt),b(tailPt),1-100/bL,C.w23,'Tから1m',cW,cH);
-    if (nosePt&&tailPt&&step>=6) drawGuideLine(ctx,b(nosePt),b(tailPt),1-50/bL,C.w45,'Tから0.5m',cW,cH);
+    const bmdpN = nosePt ? {x:mdp(nosePt).x, y:mdp(nosePt).y+BAND} : null;
+    const bmdpT = tailPt ? {x:mdp(tailPt).x, y:mdp(tailPt).y+BAND} : null;
+    if (nosePt&&tailPt&&step>=3) drawGuideLine(ctx,bmdpN,bmdpT,50/bL,C.w05,'Nから0.5m',cW,cH);
+    if (nosePt&&tailPt&&step>=4) drawGuideLine(ctx,bmdpN,bmdpT,100/bL,C.w13,'Nから1m',cW,cH);
+    if (nosePt&&tailPt&&step>=5) drawGuideLine(ctx,bmdpN,bmdpT,1-100/bL,C.w23,'Tから1m',cW,cH);
+    if (nosePt&&tailPt&&step>=6) drawGuideLine(ctx,bmdpN,bmdpT,1-50/bL,C.w45,'Tから0.5m',cW,cH);
 
-    // wPtsはmdpでオフセット済み→さらにBAND加算
     const bmdp = pt => ({x:mdp(pt).x, y:mdp(pt).y+BAND});
     if (maxPts.length===2) drawLine(ctx,bmdp(maxPts[0]),bmdp(maxPts[1]),C.max,4,false);
     if (w05Pts.length===2) drawLine(ctx,bmdp(w05Pts[0]),bmdp(w05Pts[1]),C.w05,4,false);
@@ -293,20 +234,19 @@ export default function App() {
     w13Pts.forEach(p=>drawMarker(ctx,b(p),C.w13,''));
     w23Pts.forEach(p=>drawMarker(ctx,b(p),C.w23,''));
     w45Pts.forEach(p=>drawMarker(ctx,b(p),C.w45,''));
+    if (tailWPts.length===2) drawLine(ctx,bmdp(tailWPts[0]),bmdp(tailWPts[1]),'#e879f9',4,false);
+    tailWPts.forEach(p=>drawMarker(ctx,b(p),'#e879f9',''));
     if (nosePt) drawMarker(ctx,b(nosePt),C.nose,'N');
     if (tailPt) drawMarker(ctx,b(tailPt),C.tail,'T');
 
-  }, [step,nosePt,tailPt,maxPts,w05Pts,w13Pts,w23Pts,w45Pts,imgSrc,imgW,imgH]);
+  }, [step,nosePt,tailPt,maxPts,w05Pts,w13Pts,w23Pts,w45Pts,tailWPts,imgSrc,imgW,imgH]);
 
-  // Canvas座標取得
   function getpt(e) {
     const canvas=canvasRef.current;
     if (!canvas) return {x:0,y:0};
     const rect=canvas.getBoundingClientRect();
-    // canvasはimgW x (imgH+BAND*2)なのでscaleはimgWベース
     const sc=imgW/rect.width;
     const cx=e.clientX, cy=e.clientY;
-    // canvas座標からBANDを引いて元画像座標に変換
     const rawX=(cx-rect.left)*sc;
     const rawY=(cy-rect.top)*sc - BAND;
     return {
@@ -315,17 +255,60 @@ export default function App() {
     };
   }
 
+  const ZOOM_SCALE = 3;
+  function applyZoom(e) {
+    const mainCanvas = canvasRef.current;
+    const zCanvas = zoomRef.current;
+    if (!mainCanvas || !zCanvas) return;
+    const rect = mainCanvas.getBoundingClientRect();
+    const sc = mainCanvas.width / rect.width;
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const ptX = cx * sc;
+    const ptY = cy * sc - MR * 4;
+    const VW = window.innerWidth;
+    const VH = window.innerHeight;
+    if (zCanvas.width !== VW || zCanvas.height !== VH) {
+      zCanvas.width = VW;
+      zCanvas.height = VH;
+    }
+    zCanvas.style.display = 'block';
+    const zCtx = zCanvas.getContext('2d');
+    zCtx.fillStyle = '#0d1b2a';
+    zCtx.fillRect(0, 0, VW, VH);
+    const destCX = VW / 2;
+    const destCY = VH / 3;
+    const SRC = VW / ZOOM_SCALE;
+    const srcX = Math.max(0, Math.min(mainCanvas.width  - SRC, ptX - SRC / 2));
+    const srcY = Math.max(0, Math.min(mainCanvas.height - SRC, ptY - SRC / 2));
+    const dstX = destCX - VW / 2;
+    const dstY = destCY - VW / 2;
+    zCtx.drawImage(mainCanvas, srcX, srcY, SRC, SRC, dstX, dstY, VW, VW);
+    zCtx.strokeStyle = 'rgba(255,255,255,0.9)';
+    zCtx.lineWidth = 2;
+    zCtx.setLineDash([6, 4]);
+    zCtx.beginPath(); zCtx.moveTo(destCX - 20, destCY); zCtx.lineTo(destCX + 20, destCY); zCtx.stroke();
+    zCtx.beginPath(); zCtx.moveTo(destCX, destCY - 20); zCtx.lineTo(destCX, destCY + 20); zCtx.stroke();
+    zCtx.setLineDash([]);
+  }
+
+  function removeZoom() {
+    const zCanvas = zoomRef.current;
+    if (!zCanvas) return;
+    zCanvas.style.display = 'none';
+  }
+
   function onPointerDown(e) {
     e.preventDefault();
     const canvas=canvasRef.current;
     if (!canvas) return;
-    // 各ステップで2点揃ったらそれ以上タップ無効
     if (step===1 && nosePt && tailPt) return;
     if (step===2 && maxPts.length>=2) return;
     if (step===3 && w05Pts.length>=2) return;
     if (step===4 && w13Pts.length>=2) return;
     if (step===5 && w23Pts.length>=2) return;
     if (step===6 && w45Pts.length>=2) return;
+    if (step===8 && tailWPts.length>=2) return;
     canvas.setPointerCapture(e.pointerId);
     dragging.current=true;
     const pt=getpt(e);
@@ -348,19 +331,25 @@ export default function App() {
     } else if (step===6) {
       dragSlot.current='w45';
       dragIdx.current=w45Pts.length<2?w45Pts.length:1;
+    } else if (step===8) {
+      dragSlot.current='tailW';
+      dragIdx.current=tailWPts.length<2?tailWPts.length:1;
     } else return;
     applyPt(pt);
+    if (step===1||step===8) applyZoom(e);
   }
 
   function onPointerMove(e) {
     if (!dragging.current) return;
     e.preventDefault();
     applyPt(getpt(e));
+    if (step===1||step===8) applyZoom(e);
   }
 
   function onPointerUp(e) {
     dragging.current=false;
     dragSlot.current=null;
+    removeZoom();
   }
 
   function applyPt(pt) {
@@ -375,6 +364,7 @@ export default function App() {
     else if (slot==='w13') upd(setW13Pts, constrain(pt,nosePt,tailPt,100/parseFloat(boardLen)));
     else if (slot==='w23') upd(setW23Pts, constrain(pt,nosePt,tailPt,1-100/parseFloat(boardLen)));
     else if (slot==='w45') upd(setW45Pts, constrain(pt,nosePt,tailPt,1-50/parseFloat(boardLen)));
+    else if (slot==='tailW') upd(setTailWPts, pt);
   }
 
   function undo() {
@@ -384,9 +374,10 @@ export default function App() {
     else if (step===4) setW13Pts(p=>p.slice(0,-1));
     else if (step===5) setW23Pts(p=>p.slice(0,-1));
     else if (step===6) setW45Pts(p=>p.slice(0,-1));
+    else if (step===8) setTailWPts(p=>p.slice(0,-1));
   }
 
-  function calc() {
+  function calc(isPinTailOverride=isPinTail) {
     const bLen=parseFloat(boardLen);
     const totalPx=dist(nosePt,tailPt);
     const mMax0=mdp(maxPts[0]),mMax1=mdp(maxPts[1]);
@@ -397,6 +388,9 @@ export default function App() {
     const maxWpx=dist(mMax0,mMax1);
     const inputMax=parseFloat(maxWInput)||0;
     const pxPerCm=inputMax>0?maxWpx/inputMax:totalPx/bLen;
+    const tailWcm = (isPinTailOverride===false && tailWPts.length===2)
+      ? (dist(mdp(tailWPts[0]),mdp(tailWPts[1]))/pxPerCm).toFixed(1)
+      : null;
     return {
       bLen,
       maxWcm:(maxWpx/pxPerCm).toFixed(1),
@@ -404,12 +398,13 @@ export default function App() {
       w13cm:(dist(mW130,mW131)/pxPerCm).toFixed(1),
       w23cm:(dist(mW230,mW231)/pxPerCm).toFixed(1),
       w45cm:(dist(mW450,mW451)/pxPerCm).toFixed(1),
+      tailWcm,
       mMax0,mMax1,mW050,mW051,mW130,mW131,mW230,mW231,mW450,mW451,
     };
   }
 
-  function goResult() {
-    const res=calc();
+  function goResult(isPinTailOverride=isPinTail) {
+    const res=calc(isPinTailOverride);
     setResultData(res);
     const canvas=canvasRef.current;
     if (canvas) {
@@ -417,7 +412,6 @@ export default function App() {
       snap.width=canvas.width; snap.height=canvas.height;
       const sctx=snap.getContext('2d');
       sctx.drawImage(canvas,0,0);
-      // mXX座標は元画像座標系なのでBAND加算してcanvas座標に変換
       function emphLine(a,b,color){
         const ax=a.x, ay=a.y+BAND, bx=b.x, by=b.y+BAND;
         sctx.beginPath(); sctx.moveTo(ax,ay); sctx.lineTo(bx,by);
@@ -429,9 +423,6 @@ export default function App() {
       emphLine(res.mW130,res.mW131,C.w13);
       emphLine(res.mW230,res.mW231,C.w23);
       emphLine(res.mW450,res.mW451,C.w45);
-      // ノーズ・最大幅・テールのラベル
-      // 最大幅ラベル（右側マークの右に表示）
-      // mMax0とmMax1のどちらがx座標が大きいか（右側）を判定
       const maxRight = res.mMax0.x >= res.mMax1.x ? res.mMax0 : res.mMax1;
       const lfs = Math.max(18, Math.round(canvas.width * 0.03)) - 2;
       sctx.font = `bold ${lfs}px sans-serif`;
@@ -444,7 +435,7 @@ export default function App() {
       sctx.fillStyle = C.max; sctx.fillText('最大幅', lx, ly);
       setResultImg(snap.toDataURL('image/jpeg',0.92));
     }
-    setStep(7);
+    setStep(9);
   }
 
   function resetAll() {
@@ -452,14 +443,14 @@ export default function App() {
     setBoardLen(''); setMaxWInput('');
     setLenFt(''); setLenIn('');
     setMaxWInt(''); setMaxWNum(''); setMaxWDen('');
-    setMaxWInt(''); setMaxWNum(''); setMaxWDen('');
     setNosePt(null); setTailPt(null);
     setMaxPts([]); setW05Pts([]); setW13Pts([]); setW23Pts([]); setW45Pts([]);
+    setIsPinTail(null); setTailWPts([]);
     setResultImg(null); setResultData(null);
     imgRef.current=null;
   }
 
-  const STEP_LABELS=['写真・長さ','端点','最大幅','N0.5m','N1m','T1m','T0.5m','結果'];
+  const STEP_LABELS=['写真・長さ','端点','最大幅','N0.5m','N1m','T1m','T0.5m','テール','T幅','結果'];
   const instrMap={
     0:'写真を選んで全長を入力してください',
     1:!nosePt?'① ノーズ（先端）をタップ':!tailPt?'② テール（後端）をタップ':'✓ 両端を指定しました',
@@ -468,7 +459,9 @@ export default function App() {
     4:w13Pts.length===0?'Nから1m位置（紫線）の端をタップ':w13Pts.length===1?'もう一方の端をタップ':'✓ Nから1m位置を指定しました',
     5:w23Pts.length===0?'Tから1m位置（オレンジ線）の端をタップ':w23Pts.length===1?'もう一方の端をタップ':'✓ Tから1m位置を指定しました',
     6:w45Pts.length===0?'Tから0.5m位置（ピンク線）の端をタップ':w45Pts.length===1?'もう一方の端をタップ':'✓ Tから0.5m位置を指定しました',
-    7:'採寸完了',
+    7:'テールの形状を選択してください',
+    8:tailWPts.length===0?'テール幅の端をタップ（左右どちらからでもOK）':tailWPts.length===1?'もう一方の端をタップ':'✓ テール幅を指定しました',
+    9:'採寸完了',
   };
   const canNext={
     0:!!imgSrc&&parseFloat(boardLen)>0,
@@ -478,76 +471,80 @@ export default function App() {
     4:w13Pts.length===2,
     5:w23Pts.length===2,
     6:w45Pts.length===2,
+    8:tailWPts.length===2,
   };
-  const canUndo={1:!!nosePt,2:maxPts.length>0,3:w05Pts.length>0,4:w13Pts.length>0,5:w23Pts.length>0,6:w45Pts.length>0};
+  const canUndo={1:!!nosePt,2:maxPts.length>0,3:w05Pts.length>0,4:w13Pts.length>0,5:w23Pts.length>0,6:w45Pts.length>0,8:tailWPts.length>0};
 
-  const btnP=(dis)=>({display:'block',width:'calc(100% - 32px)',margin:'12px 16px 0',padding:14,background:dis?C.muted:C.turq,color:C.navy,border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:dis?'not-allowed':'pointer',opacity:dis?.38:1});
-  const btnS={display:'block',width:'calc(100% - 32px)',margin:'8px 16px 0',padding:11,background:'transparent',border:'1px solid rgba(255,255,255,.12)',borderRadius:10,color:C.muted,fontSize:13,cursor:'pointer'};
-  const btnUndo=(dis)=>({display:'inline-flex',alignItems:'center',gap:6,margin:'10px 16px 0',padding:'9px 14px',background:'rgba(224,92,92,.08)',border:'1px solid rgba(224,92,92,.25)',borderRadius:8,color:C.red,fontSize:13,cursor:dis?'not-allowed':'pointer',opacity:dis?.3:1});
-  const inputSt={flex:1,background:'rgba(255,255,255,.06)',border:'1px solid rgba(0,201,177,.25)',borderRadius:8,padding:'11px 12px',color:C.foam,fontFamily:'monospace',fontSize:20,outline:'none',WebkitAppearance:'none'};
-  // placeholderの色を薄くするCSS（グローバルに注入）
-  const phStyle = `input::placeholder { color: rgba(200,184,154,0.45); font-size: 18px; }`;
+  const inputSt={flex:1,background:'rgba(255,255,255,.06)',border:'1px solid rgba(0,201,177,.25)',borderRadius:8,padding:'11px 12px',color:'#f0f7f6',fontFamily:'monospace',fontSize:20,outline:'none',WebkitAppearance:'none'};
+  const btnP=(dis)=>({display:'block',width:'calc(100% - 32px)',margin:'12px 16px 0',padding:14,background:dis?'#4a6274':'#00c9b1',color:'#0d1b2a',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:dis?'not-allowed':'pointer',opacity:dis?.38:1});
+  const btnS={display:'block',width:'calc(100% - 32px)',margin:'8px 16px 0',padding:11,background:'transparent',border:'1px solid rgba(255,255,255,.12)',borderRadius:10,color:'#4a6274',fontSize:13,cursor:'pointer'};
+  const btnUndo=(dis)=>({display:'inline-flex',alignItems:'center',gap:6,margin:'10px 16px 0',padding:'9px 14px',background:'rgba(224,92,92,.08)',border:'1px solid rgba(224,92,92,.25)',borderRadius:8,color:'#e05c5c',fontSize:13,cursor:dis?'not-allowed':'pointer',opacity:dis?.3:1});
   const ibox={margin:'12px 16px 0',padding:14,background:'rgba(255,255,255,.03)',border:'1px solid rgba(0,201,177,.15)',borderRadius:12};
-  const instr={margin:'14px 16px 0',padding:'12px 16px',borderRadius:10,background:'rgba(0,201,177,.07)',border:'1px solid rgba(0,201,177,.2)',fontSize:13,color:C.sand2,lineHeight:1.5};
+  const instr={margin:'14px 16px 0',padding:'12px 16px',borderRadius:10,background:'rgba(0,201,177,.07)',border:'1px solid rgba(0,201,177,.2)',fontSize:13,color:'#c8b89a',lineHeight:1.5};
 
   return (
-    <div style={{maxWidth:480,margin:'0 auto',padding:'0 0 60px',fontFamily:'Inter,sans-serif',background:C.navy,minHeight:'100vh',color:C.sand}}>
+    <div style={{width:'100%',maxWidth:480,margin:'0 auto',padding:'0 0 60px',fontFamily:'Inter,sans-serif',background:'#0d1b2a',minHeight:'100vh',color:'#e8dcc8'}}>
 
       <div style={{padding:'24px 16px 16px',borderBottom:'1px solid rgba(0,201,177,.15)'}}>
-        <div style={{fontSize:24,color:C.foam,fontWeight:700}}>Board<span style={{color:C.turq,fontStyle:'italic'}}>Measure</span></div>
-        <div style={{marginTop:4,fontSize:11,letterSpacing:'0.12em',textTransform:'uppercase',color:C.muted}}>オーダーメイドケースのための採寸システム</div>
+        <div style={{fontSize:24,color:'#f0f7f6',fontWeight:700}}>Board<span style={{color:'#00c9b1',fontStyle:'italic'}}>Measure</span></div>
+        <div style={{marginTop:4,fontSize:11,letterSpacing:'0.12em',textTransform:'uppercase',color:'#4a6274'}}>オーダーメイドケースのための採寸システム</div>
       </div>
 
       <div style={{display:'flex',margin:'16px 16px 0'}}>
         {STEP_LABELS.map((label,i)=>(
-          <div key={i} style={{flex:1,textAlign:'center',fontSize:9,paddingBottom:7,textTransform:'uppercase',letterSpacing:'0.04em',borderBottom:`2px solid ${i===step?C.turq:i<step?C.turq2:'rgba(255,255,255,.06)'}`,color:i===step?C.turq:i<step?C.turq2:C.muted}}>
+          <div key={i} style={{flex:1,textAlign:'center',fontSize:9,paddingBottom:7,textTransform:'uppercase',letterSpacing:'0.04em',borderBottom:`2px solid ${i===step?'#00c9b1':i<step?'#009e8d':'rgba(255,255,255,.06)'}`,color:i===step?'#00c9b1':i<step?'#009e8d':'#4a6274'}}>
             <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{i+1}</div>
             {label}
           </div>
         ))}
       </div>
 
-      <div style={instr}><strong style={{color:C.turq,display:'block',marginBottom:2}}>{instrMap[step]}</strong></div>
+      <div style={instr}><strong style={{color:'#00c9b1',display:'block',marginBottom:2}}>{instrMap[step]}</strong></div>
 
       {step===0 && (
         <div>
           <div onClick={()=>fileRef.current.click()} style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',margin:'14px 16px 0',aspectRatio:'4/3',border:'2px dashed rgba(0,201,177,.3)',borderRadius:14,cursor:'pointer',background:'rgba(0,201,177,.03)',overflow:'hidden',position:'relative'}}>
             {imgSrc
               ? <img src={imgSrc} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain'}} />
-              : <><div style={{fontSize:40,marginBottom:10}}>📷</div><div style={{fontSize:14,color:C.sand2}}>タップして写真を選択</div></>
+              : <><div style={{fontSize:40,marginBottom:10}}>📷</div><div style={{fontSize:14,color:'#c8b89a'}}>タップして写真を選択</div></>
             }
           </div>
           <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(f)handleFile(f);}} />
           <div style={ibox}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}><label style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.1em',color:C.muted}}>ボードの全長 <span style={{color:C.turq}}>*必須</span></label><span style={{fontSize:10,color:C.muted}}>※センチかインチどちらか記入</span></div>
-            {/* 両行を同じ幅のwrapperに入れてcm行の右端にft/in行を揃える */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+              <label style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.1em',color:'#4a6274'}}>ボードの全長 <span style={{color:'#00c9b1'}}>*必須</span></label>
+              <span style={{fontSize:10,color:'#4a6274'}}>※センチかインチどちらか記入</span>
+            </div>
             <div>
               <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
                 <input type="text" inputMode="numeric" placeholder="9" value={lenFt} onChange={e=>onLenFtChange(e.target.value)} autoComplete="off" style={{...inputSt,width:52,flex:'none',fontSize:20}} />
-                <span style={{color:C.muted,fontSize:13,flexShrink:0}}>ft</span>
+                <span style={{color:'#4a6274',fontSize:13,flexShrink:0}}>ft</span>
                 <input type="text" inputMode="decimal" placeholder="6" value={lenIn} onChange={e=>onLenInChange(e.target.value)} autoComplete="off" style={{...inputSt,fontSize:20,flex:1,minWidth:0}} />
-                <span style={{color:C.muted,fontSize:13,flexShrink:0,width:20}}>in</span>
+                <span style={{color:'#4a6274',fontSize:13,flexShrink:0,width:20}}>in</span>
               </div>
               <div style={{display:'flex',gap:6,alignItems:'center'}}>
                 <input type="text" inputMode="decimal" placeholder="289.6" value={boardLen} onChange={e=>onLenCmChange(e.target.value)} autoComplete="off" style={inputSt} />
-                <span style={{color:C.muted,fontSize:13,flexShrink:0}}>cm</span>
+                <span style={{color:'#4a6274',fontSize:13,flexShrink:0}}>cm</span>
               </div>
             </div>
           </div>
           <div style={ibox}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}><label style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.1em',color:C.muted}}>最大幅 <span style={{color:C.turq}}>*必須</span></label><span style={{fontSize:10,color:C.muted}}>※センチかインチどちらか記入</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+              <label style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.1em',color:'#4a6274'}}>最大幅 <span style={{color:'#00c9b1'}}>*必須</span></label>
+              <span style={{fontSize:10,color:'#4a6274'}}>※センチかインチどちらか記入</span>
+            </div>
             <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
-              <input type="text" inputMode="numeric" placeholder="23" value={maxWInt} onChange={e=>onMaxWInchChange(e.target.value,undefined,undefined)} autoComplete="off" style={{...inputSt,width:52,flex:'none',fontSize:18}} />
+              <input type="text" inputMode="numeric" placeholder="23" value={maxWInt} onChange={e=>onMaxWInchChange(e.target.value,undefined,undefined)} autoComplete="off" style={{...inputSt,width:52,flex:'none',fontSize:20}} />
               <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1,gap:2}}>
                 <input type="text" inputMode="numeric" placeholder="0" value={maxWNum} onChange={e=>onMaxWInchChange(undefined,e.target.value,undefined)} autoComplete="off" style={{...inputSt,fontSize:16,textAlign:'center',padding:'5px 4px'}} />
                 <div style={{height:2,width:'80%',background:'rgba(255,255,255,.35)',borderRadius:1}}></div>
                 <input type="text" inputMode="numeric" placeholder="0" value={maxWDen} onChange={e=>onMaxWInchChange(undefined,undefined,e.target.value)} autoComplete="off" style={{...inputSt,fontSize:16,textAlign:'center',padding:'5px 4px'}} />
               </div>
-              <span style={{color:C.muted,fontSize:13,flexShrink:0}}>in</span>
+              <span style={{color:'#4a6274',fontSize:13,flexShrink:0}}>in</span>
             </div>
             <div style={{display:'flex',gap:6,alignItems:'center'}}>
               <input type="text" inputMode="decimal" placeholder="58.4" value={maxWInput} onChange={e=>onMaxWCmChange(e.target.value)} autoComplete="off" style={inputSt} />
-              <span style={{color:C.muted,fontSize:13,flexShrink:0}}>cm</span>
+              <span style={{color:'#4a6274',fontSize:13,flexShrink:0}}>cm</span>
             </div>
           </div>
           <button disabled={!canNext[0]} onClick={()=>{setNosePt(null);setTailPt(null);setStep(1);}} style={btnP(!canNext[0])}>次へ：端点を指定する →</button>
@@ -556,12 +553,13 @@ export default function App() {
 
       {step>=1&&step<=6 && (
         <div>
-          <div style={{margin:'14px 32px 0',borderRadius:12,overflow:'hidden',background:'#000',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none'}}>
+          <div style={{margin:'14px 32px 0',borderRadius:12,overflow:'hidden',background:'#000',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none',position:'relative'}}>
             <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
           </div>
+          <canvas ref={zoomRef} style={{display:'none',position:'fixed',top:0,left:0,width:'100vw',height:'100vh',zIndex:999,pointerEvents:'none',background:'#000'}} />
           <div style={{margin:'8px 16px 0',display:'flex',flexWrap:'wrap',gap:8}}>
-            {[{c:C.nose,l:'ノーズ'},{c:C.tail,l:'テール'},{c:C.max,l:'最大幅'},{c:C.w05,l:'N0.5m'},{c:C.w13,l:'N1m'},{c:C.w23,l:'T1m'},{c:C.w45,l:'T0.5m'}].map(({c,l})=>(
-              <div key={l} style={{display:'flex',alignItems:'center',gap:5,fontSize:11,color:C.muted}}>
+            {[{c:'#ff6b6b',l:'ノーズ'},{c:'#ffd93d',l:'テール'},{c:'#00c9b1',l:'最大幅'},{c:'#34d399',l:'N0.5m'},{c:'#a78bfa',l:'N1m'},{c:'#fb923c',l:'T1m'},{c:'#f472b6',l:'T0.5m'}].map(({c,l})=>(
+              <div key={l} style={{display:'flex',alignItems:'center',gap:5,fontSize:11,color:'#4a6274'}}>
                 <div style={{width:10,height:10,borderRadius:'50%',background:c}}></div>{l}
               </div>
             ))}
@@ -572,7 +570,7 @@ export default function App() {
           {step===3 && <button disabled={!canNext[3]} onClick={()=>{setW13Pts([]);setStep(4);}} style={btnP(!canNext[3])}>次へ：Nから1m位置の幅を指定する →</button>}
           {step===4 && <button disabled={!canNext[4]} onClick={()=>{setW23Pts([]);setStep(5);}} style={btnP(!canNext[4])}>次へ：Tから1m位置の幅を指定する →</button>}
           {step===5 && <button disabled={!canNext[5]} onClick={()=>{setStep(6);}} style={btnP(!canNext[5])}>次へ：Tから0.5m位置の幅を指定する →</button>}
-          {step===6 && <button disabled={!canNext[6]} onClick={goResult} style={btnP(!canNext[6])}>採寸結果を見る →</button>}
+          {step===6 && <button disabled={!canNext[6]} onClick={()=>setStep(7)} style={btnP(!canNext[6])}>次へ：テール形状を選択する →</button>}
           <button onClick={()=>{
             if(step===2){setMaxPts([]);}
             else if(step===3){setW05Pts([]);}
@@ -584,28 +582,62 @@ export default function App() {
         </div>
       )}
 
-      {step===7&&resultData && (
+      {step===7 && (
+        <div>
+          <div style={{margin:'24px 16px 0',display:'flex',flexDirection:'column',gap:16}}>
+            <button onClick={()=>{setIsPinTail(true);goResult(true);}} style={{padding:'20px 16px',borderRadius:14,border:'2px solid rgba(0,201,177,0.4)',background:'rgba(0,201,177,0.08)',color:'#00c9b1',fontSize:18,fontWeight:700,cursor:'pointer',letterSpacing:1}}>
+              ピンテール
+            </button>
+            <button onClick={()=>{setIsPinTail(false);setTailWPts([]);setStep(8);}} style={{padding:'20px 16px',borderRadius:14,border:'2px solid rgba(168,139,250,0.4)',background:'rgba(168,139,250,0.08)',color:'#a78bfa',fontSize:18,fontWeight:700,cursor:'pointer',letterSpacing:1}}>
+              それ以外
+            </button>
+          </div>
+          <button onClick={()=>setStep(6)} style={{...btnS,marginTop:16}}>← 前のステップに戻る</button>
+        </div>
+      )}
+
+      {step===8 && (
+        <div>
+          <div style={{margin:'14px 32px 0',borderRadius:12,overflow:'hidden',background:'#000',touchAction:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTouchCallout:'none',position:'relative'}}>
+            <canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} style={{display:'block',width:'100%',touchAction:'none',cursor:'crosshair'}} />
+          </div>
+          <canvas ref={zoomRef} style={{display:'none',position:'fixed',top:0,left:0,width:'100vw',height:'100vh',zIndex:999,pointerEvents:'none',background:'#000'}} />
+          <div style={{margin:'8px 16px 0',display:'flex',flexWrap:'wrap',gap:8}}>
+            {[{c:'#ff6b6b',l:'ノーズ'},{c:'#ffd93d',l:'テール'},{c:'#e879f9',l:'T幅'}].map(({c,l})=>(
+              <div key={l} style={{display:'flex',alignItems:'center',gap:5,fontSize:11,color:'#4a6274'}}>
+                <div style={{width:10,height:10,borderRadius:'50%',background:c}}></div>{l}
+              </div>
+            ))}
+          </div>
+          <button disabled={!canUndo[8]} onClick={undo} style={btnUndo(!canUndo[8])}>↩ 直前に戻す</button>
+          <button disabled={!canNext[8]} onClick={()=>goResult(false)} style={btnP(!canNext[8])}>採寸結果を見る →</button>
+          <button onClick={()=>{setTailWPts([]);setStep(7);}} style={btnS}>← 前のステップに戻る</button>
+        </div>
+      )}
+
+      {step===9&&resultData && (
         <div>
           {resultImg && <div style={{margin:'14px 16px 0',borderRadius:12,overflow:'hidden'}}><img src={resultImg} alt="採寸結果" style={{display:'block',width:'100%'}} /></div>}
           <div style={{margin:'14px 16px 0',display:'flex',flexDirection:'column',gap:8}}>
             {[
-              {color:C.turq,label:'全長',val:resultData.bLen,sub:null},
-              {color:C.max,label:'最大幅',val:resultData.maxWcm,sub:null},
-              {color:C.w05,label:'Nから0.5mの幅',val:resultData.w05cm,sub:'ノーズから 50cm の位置'},
-              {color:C.w13,label:'Nから1mの幅',val:resultData.w13cm,sub:'ノーズから 100cm の位置'},
-              {color:C.w23,label:'Tから1mの幅',val:resultData.w23cm,sub:'テールから 100cm の位置'},
-              {color:C.w45,label:'Tから0.5mの幅',val:resultData.w45cm,sub:'テールから 50cm の位置'},
+              {color:'#00c9b1',label:'全長',val:resultData.bLen,sub:null},
+              {color:'#00c9b1',label:'最大幅',val:resultData.maxWcm,sub:null},
+              {color:'#34d399',label:'Nから0.5mの幅',val:resultData.w05cm,sub:'ノーズから 50cm の位置'},
+              {color:'#a78bfa',label:'Nから1mの幅',val:resultData.w13cm,sub:'ノーズから 100cm の位置'},
+              {color:'#fb923c',label:'Tから1mの幅',val:resultData.w23cm,sub:'テールから 100cm の位置'},
+              {color:'#f472b6',label:'Tから0.5mの幅',val:resultData.w45cm,sub:'テールから 50cm の位置'},
+              ...(resultData.tailWcm!==null?[{color:'#e879f9',label:'T幅',val:resultData.tailWcm,sub:'テール下端の幅'}]:[]),
             ].map(({color,label,val,sub})=>(
-              <div key={label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px',background:color===C.turq?'rgba(0,201,177,.06)':'rgba(255,255,255,.03)',border:`1px solid ${color===C.turq?'rgba(0,201,177,.35)':'rgba(0,201,177,.1)'}`,borderRadius:10}}>
+              <div key={label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px',background:'rgba(255,255,255,.03)',border:'1px solid rgba(0,201,177,.1)',borderRadius:10}}>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}></div>
                   <div>
-                    <div style={{fontSize:13,color:C.sand2}}>{label}</div>
-                    {sub&&<div style={{fontSize:10,color:C.muted,marginTop:2}}>{sub}</div>}
+                    <div style={{fontSize:13,color:'#c8b89a'}}>{label}</div>
+                    {sub&&<div style={{fontSize:10,color:'#4a6274',marginTop:2}}>{sub}</div>}
                   </div>
                 </div>
-                <div style={{fontFamily:'monospace',fontSize:20,fontWeight:500,color:C.foam}}>
-                  {val}<span style={{fontSize:11,color:C.muted,marginLeft:2}}>cm</span>
+                <div style={{fontFamily:'monospace',fontSize:20,fontWeight:500,color:'#f0f7f6'}}>
+                  {val}<span style={{fontSize:11,color:'#4a6274',marginLeft:2}}>cm</span>
                 </div>
               </div>
             ))}
