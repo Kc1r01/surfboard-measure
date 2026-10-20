@@ -8,7 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 // ===== 画面上の見た目(CSSピクセル)基準のサイズ設定 =====
 // 画像のピクセル数ではなく、画面上の大きさで決める。PXU＝キャンバス1CSSピクセルあたりの画像ピクセル数。
 // 基準はiPhone SE3（CSS幅375px）での見た目。
@@ -208,16 +208,9 @@ export default function App() {
     };
   }, [step]);
 
-  useEffect(() => {
-    if (!imgRef.current||step===0) return;
-    const canvas=canvasRef.current;
-    if (!canvas) return;
-    const img=imgRef.current;
-    const cw=canvas.parentElement.clientWidth;
-    const sc=img.width/cw;
+  // 画像＋ガイド線＋各プロット＋マークを、指定のキャンバスに描く（画面のキャンバスにも、結果画像用の裏キャンバスにも使う）
+  function paintScene(canvas, img, skipEmphMarkers=false) {
     canvas.width=img.width; canvas.height=img.height;
-    canvas.style.width=cw+'px';
-    canvas.style.height=Math.round(img.height/sc)+'px';
     const ctx=canvas.getContext('2d');
     ctx.drawImage(img,0,0);
 
@@ -239,16 +232,29 @@ export default function App() {
     if (w23Pts.length===2) drawLine(ctx,bmdp(w23Pts[0]),bmdp(w23Pts[1]),C.w23,4,false);
     if (w45Pts.length===2) drawLine(ctx,bmdp(w45Pts[0]),bmdp(w45Pts[1]),C.w45,4,false);
 
-    maxPts.forEach(p=>drawMarker(ctx,b(p),C.max,''));
-    w05Pts.forEach(p=>drawMarker(ctx,b(p),C.w05,''));
-    w13Pts.forEach(p=>drawMarker(ctx,b(p),C.w13,''));
-    w23Pts.forEach(p=>drawMarker(ctx,b(p),C.w23,''));
-    w45Pts.forEach(p=>drawMarker(ctx,b(p),C.w45,''));
+    if (!skipEmphMarkers) {
+      maxPts.forEach(p=>drawMarker(ctx,b(p),C.max,''));
+      w05Pts.forEach(p=>drawMarker(ctx,b(p),C.w05,''));
+      w13Pts.forEach(p=>drawMarker(ctx,b(p),C.w13,''));
+      w23Pts.forEach(p=>drawMarker(ctx,b(p),C.w23,''));
+      w45Pts.forEach(p=>drawMarker(ctx,b(p),C.w45,''));
+    }
     if (tailWPts.length===2) drawLine(ctx,bmdp(tailWPts[0]),bmdp(tailWPts[1]),'#e879f9',4,false);
     tailWPts.forEach(p=>drawMarker(ctx,b(p),'#e879f9',''));
     if (nosePt) drawMarker(ctx,b(nosePt),C.nose,'N');
     if (tailPt) drawMarker(ctx,b(tailPt),C.tail,'T');
+  }
 
+  useEffect(() => {
+    if (!imgRef.current||step===0) return;
+    const canvas=canvasRef.current;
+    if (!canvas) return;
+    const img=imgRef.current;
+    const cw=canvas.parentElement.clientWidth;
+    const sc=img.width/cw;
+    paintScene(canvas, img);
+    canvas.style.width=cw+'px';
+    canvas.style.height=Math.round(img.height/sc)+'px';
   }, [step,nosePt,tailPt,maxPts,w05Pts,w13Pts,w23Pts,w45Pts,tailWPts,imgSrc,imgW,imgH]);
 
   // ステップ1/8に入った時、キャンバス上端が画面の外にあれば1回だけスクロールして画面内に入れる
@@ -464,27 +470,21 @@ export default function App() {
   function goResult(isPinTailOverride=isPinTail) {
     const res=calc(isPinTailOverride);
     setResultData(res);
-    const canvas=canvasRef.current;
+    // 結果画像用の土台は、画面のキャンバスではなく裏キャンバスに描く。
+    // （ピンテールはステップ7から直接結果へ進み、画面にキャンバスが無いため。
+    //   強調線5本の端点マークは、あとから線の上に描き直すので、土台では省く）
+    let canvas=null;
+    if (imgRef.current) { canvas=document.createElement('canvas'); paintScene(canvas, imgRef.current, true); }
     if (canvas) {
       const snap=document.createElement('canvas');
       snap.width=canvas.width; snap.height=canvas.height;
       const sctx=snap.getContext('2d');
       sctx.drawImage(canvas,0,0);
       // 強調線（5本）：端点のマークはノーズ/テールと同じ「薄い色の丸＋十字」に統一する。
-      // 土台のスナップショットにも同じマークが描かれているため、端点まわりは元画像に戻してから
-      // 線→マークの順に描き直し、マークの重ね塗り（透明度の累積）を防ぐ。
       const emph=[
         [res.mMax0,res.mMax1,C.max],[res.mW050,res.mW051,C.w05],[res.mW130,res.mW131,C.w13],
         [res.mW230,res.mW231,C.w23],[res.mW450,res.mW451,C.w45],
       ];
-      const clearR=((MR+4)*2/3+3)*PXU;
-      emph.forEach(([p,q])=>{
-        [p,q].forEach(pt=>{
-          sctx.save(); sctx.beginPath(); sctx.arc(pt.x,pt.y+BAND,clearR,0,Math.PI*2); sctx.clip();
-          if (imgRef.current) sctx.drawImage(imgRef.current,0,0);
-          sctx.restore();
-        });
-      });
       emph.forEach(([p,q,color])=>{
         sctx.beginPath(); sctx.moveTo(p.x,p.y+BAND); sctx.lineTo(q.x,q.y+BAND);
         sctx.strokeStyle=color; sctx.lineWidth=5*PXU; sctx.setLineDash([]); sctx.stroke();
