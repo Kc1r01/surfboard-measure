@@ -8,6 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
+const APP_VERSION = 'v17';
 const MR = 12;
 const BAND = 60;
 
@@ -529,7 +530,7 @@ export default function App() {
     <div style={{width:'100%',maxWidth:480,margin:'0 auto',padding:'0 0 60px',fontFamily:'Inter,sans-serif',background:'#0d1b2a',minHeight:'100vh',color:'#e8dcc8'}}>
 
       <div style={{padding:'24px 16px 16px',borderBottom:'1px solid rgba(0,201,177,.15)'}}>
-        <div style={{fontSize:24,color:'#f0f7f6',fontWeight:700}}>Board<span style={{color:'#00c9b1',fontStyle:'italic'}}>Measure</span></div>
+        <div style={{fontSize:24,color:'#f0f7f6',fontWeight:700}}>Board<span style={{color:'#00c9b1',fontStyle:'italic'}}>Measure</span><span style={{marginLeft:6,fontSize:12,fontWeight:300,color:'#4a6274',fontStyle:'normal'}}>{APP_VERSION}</span></div>
         <div style={{marginTop:4,fontSize:11,letterSpacing:'0.12em',textTransform:'uppercase',color:'#4a6274'}}>オーダーメイドケースのための採寸システム</div>
       </div>
 
