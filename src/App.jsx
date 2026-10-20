@@ -241,9 +241,6 @@ export default function App() {
   useEffect(()=>{
     const meta = document.querySelector('meta[name="viewport"]');
     if (meta) meta.setAttribute('content','width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
-    return ()=>{
-      if (meta) meta.setAttribute('content','width=device-width, initial-scale=1');
-    };
   },[]);
 
   useEffect(() => {
@@ -526,9 +523,9 @@ export default function App() {
             {/* 両行を同じ幅のwrapperに入れてcm行の右端にft/in行を揃える */}
             <div>
               <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
-                <input type="text" inputMode="numeric" placeholder="9" value={lenFt} onChange={e=>onLenFtChange(e.target.value)} autoComplete="off" style={{...inputSt,width:52,flex:'none',fontSize:18}} />
+                <input type="text" inputMode="numeric" placeholder="9" value={lenFt} onChange={e=>onLenFtChange(e.target.value)} autoComplete="off" style={{...inputSt,width:52,flex:'none',fontSize:20}} />
                 <span style={{color:C.muted,fontSize:13,flexShrink:0}}>ft</span>
-                <input type="text" inputMode="decimal" placeholder="6" value={lenIn} onChange={e=>onLenInChange(e.target.value)} autoComplete="off" style={{...inputSt,fontSize:18,flex:1,minWidth:0}} />
+                <input type="text" inputMode="decimal" placeholder="6" value={lenIn} onChange={e=>onLenInChange(e.target.value)} autoComplete="off" style={{...inputSt,fontSize:20,flex:1,minWidth:0}} />
                 <span style={{color:C.muted,fontSize:13,flexShrink:0,width:20}}>in</span>
               </div>
               <div style={{display:'flex',gap:6,alignItems:'center'}}>
