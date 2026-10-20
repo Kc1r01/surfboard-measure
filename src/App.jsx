@@ -264,10 +264,10 @@ export default function App() {
     if (!mainCanvas || !zCanvas) return;
     const rect = mainCanvas.getBoundingClientRect();
     const sc = mainCanvas.width / rect.width;
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    const ptX = cx * sc;
-    const ptY = cy * sc - MR * 4;
+    // マーカーと同じ（端でクランプ済みの）位置を使う
+    const gp = getpt(e);
+    const ptX = gp.x;
+    const ptY = gp.y + BAND - MR * 4;
     const VW = window.innerWidth;
     const VH = window.innerHeight;
     if (zCanvas.width !== VW || zCanvas.height !== VH) {
@@ -281,11 +281,20 @@ export default function App() {
     const destCX = VW / 2;
     const destCY = VH / 3;
     const SRC = VW / ZOOM_SCALE;
-    const srcX = Math.max(0, Math.min(mainCanvas.width  - SRC, ptX - SRC / 2));
-    const srcY = Math.max(0, Math.min(mainCanvas.height - SRC, ptY - SRC / 2));
+    // 画像端でクランプしない：十字線の位置＝実際のプロット位置を常に一致させ、
+    // 画像の外側（端）まで拡大表示が動くようにする。範囲外は背景色のまま。
+    const srcX = ptX - SRC / 2;
+    const srcY = ptY - SRC / 2;
     const dstX = destCX - VW / 2;
     const dstY = destCY - VW / 2;
-    zCtx.drawImage(mainCanvas, srcX, srcY, SRC, SRC, dstX, dstY, VW, VW);
+    const k = VW / SRC;
+    const cx0 = Math.max(0, srcX), cy0 = Math.max(0, srcY);
+    const cx1 = Math.min(mainCanvas.width,  srcX + SRC);
+    const cy1 = Math.min(mainCanvas.height, srcY + SRC);
+    if (cx1 > cx0 && cy1 > cy0) {
+      zCtx.drawImage(mainCanvas, cx0, cy0, cx1 - cx0, cy1 - cy0,
+        dstX + (cx0 - srcX) * k, dstY + (cy0 - srcY) * k, (cx1 - cx0) * k, (cy1 - cy0) * k);
+    }
     zCtx.strokeStyle = 'rgba(255,255,255,0.9)';
     zCtx.lineWidth = 2;
     zCtx.setLineDash([6, 4]);
@@ -366,8 +375,8 @@ export default function App() {
       if (p) {
         const vh = window.innerHeight;
         let dy = 0;
-        if (p.clientY < AUTO_EDGE) dy = -Math.ceil((AUTO_EDGE - Math.max(p.clientY,0)) / 6);
-        else if (p.clientY > vh - AUTO_EDGE) dy = Math.ceil((p.clientY - (vh - AUTO_EDGE)) / 6);
+        if (p.clientY < AUTO_EDGE) dy = -Math.ceil((AUTO_EDGE - Math.max(p.clientY,0)) / 15);
+        else if (p.clientY > vh - AUTO_EDGE) dy = Math.ceil((p.clientY - (vh - AUTO_EDGE)) / 15);
         if (dy !== 0) {
           const before = window.scrollY;
           window.scrollBy(0, dy);
