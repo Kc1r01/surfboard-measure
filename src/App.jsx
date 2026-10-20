@@ -8,7 +8,7 @@ const C = {
   max:'#00c9b1', w05:'#34d399', w13:'#a78bfa', w23:'#fb923c', w45:'#f472b6',
 };
 
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 // ===== 画面上の見た目(CSSピクセル)基準のサイズ設定 =====
 // 画像のピクセル数ではなく、画面上の大きさで決める。PXU＝キャンバス1CSSピクセルあたりの画像ピクセル数。
 // 基準はiPhone SE3（CSS幅375px）での見た目。
@@ -470,17 +470,29 @@ export default function App() {
       snap.width=canvas.width; snap.height=canvas.height;
       const sctx=snap.getContext('2d');
       sctx.drawImage(canvas,0,0);
-      function emphLine(a,b,color){
-        const ax=a.x, ay=a.y+BAND, bx=b.x, by=b.y+BAND;
-        sctx.beginPath(); sctx.moveTo(ax,ay); sctx.lineTo(bx,by);
+      // 強調線（5本）：端点のマークはノーズ/テールと同じ「薄い色の丸＋十字」に統一する。
+      // 土台のスナップショットにも同じマークが描かれているため、端点まわりは元画像に戻してから
+      // 線→マークの順に描き直し、マークの重ね塗り（透明度の累積）を防ぐ。
+      const emph=[
+        [res.mMax0,res.mMax1,C.max],[res.mW050,res.mW051,C.w05],[res.mW130,res.mW131,C.w13],
+        [res.mW230,res.mW231,C.w23],[res.mW450,res.mW451,C.w45],
+      ];
+      const clearR=((MR+4)*2/3+3)*PXU;
+      emph.forEach(([p,q])=>{
+        [p,q].forEach(pt=>{
+          sctx.save(); sctx.beginPath(); sctx.arc(pt.x,pt.y+BAND,clearR,0,Math.PI*2); sctx.clip();
+          if (imgRef.current) sctx.drawImage(imgRef.current,0,0);
+          sctx.restore();
+        });
+      });
+      emph.forEach(([p,q,color])=>{
+        sctx.beginPath(); sctx.moveTo(p.x,p.y+BAND); sctx.lineTo(q.x,q.y+BAND);
         sctx.strokeStyle=color; sctx.lineWidth=5*PXU; sctx.setLineDash([]); sctx.stroke();
-        [[ax,ay],[bx,by]].forEach(([px,py])=>{ sctx.beginPath(); sctx.arc(px,py,8*PXU,0,Math.PI*2); sctx.fillStyle=color; sctx.fill(); });
-      }
-      emphLine(res.mMax0,res.mMax1,C.max);
-      emphLine(res.mW050,res.mW051,C.w05);
-      emphLine(res.mW130,res.mW131,C.w13);
-      emphLine(res.mW230,res.mW231,C.w23);
-      emphLine(res.mW450,res.mW451,C.w45);
+      });
+      emph.forEach(([p,q,color])=>{
+        // drawMarkerは内部で位置を上へオフセットするので、描きたい位置にオフセット分を足して渡す
+        [p,q].forEach(pt=>drawMarker(sctx,{x:pt.x,y:pt.y+BAND+MR*4},color,''));
+      });
       const maxRight = res.mMax0.x >= res.mMax1.x ? res.mMax0 : res.mMax1;
       const lfs = Math.max(18, Math.round(canvas.width * 0.03)) - 2;
       sctx.font = `bold ${lfs}px sans-serif`;
